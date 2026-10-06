@@ -27,7 +27,10 @@ export const BUILD_CONFIRMATIONS = 2;
 
 /**
  * Fetch `/healthz` and return its `build` tag (null when unavailable, not reported, or too slow). Never throws.
- * @param {Function} fetchFn @param {{ timeoutMs?: number, setTimeout?: Function, clearTimeout?: Function }} [o]
+ * The parsed body goes to `o.onInfo` when given — the guard is the page's only /healthz poller, so other
+ * consumers (the "newer release" hint on the title screen) ride along at no extra request cost.
+ * @param {Function} fetchFn @param {{ timeoutMs?: number, setTimeout?: Function, clearTimeout?: Function,
+ *                     onInfo?: (health: object) => void }} [o]
  * @returns {Promise<string|null>}
  */
 export async function fetchBuild(fetchFn, o = {}) {
@@ -43,6 +46,9 @@ export async function fetchBuild(fetchFn, o = {}) {
     const res = await Promise.race([fetchFn('/healthz', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }), tooSlow]);
     if (!res || !res.ok) return null;
     const body = await res.json();
+    if (body && typeof body === 'object') {
+      try { o.onInfo?.(body); } catch { /* a bad consumer must not break the guard */ }
+    }
     return body && typeof body.build === 'string' && body.build ? body.build : null;
   } catch {
     return null;
@@ -94,7 +100,7 @@ export function startBuildGuard(o = {}) {
     if (pending) return { status: 'pending', build: null };
     pending = true;
     let r;
-    try { r = await checkBuildOnce({ fetchFn, known, timeoutMs: o.timeoutMs, setTimeout: o.setTimeout, clearTimeout: o.clearTimeout }); }
+    try { r = await checkBuildOnce({ fetchFn, known, timeoutMs: o.timeoutMs, setTimeout: o.setTimeout, clearTimeout: o.clearTimeout, onInfo: o.onInfo }); }
     finally { pending = false; }
     if (stopped) return { status: 'stopped', build: null };
     if (r.status === 'unknown') { candidate = null; seen = 0; return r; }   // review: a failed check never reloads

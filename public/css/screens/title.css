@@ -255,3 +255,13 @@
   font-size: .13rem;
   color: var(--text-dim);
 }
+/* A newer release (server/updateCheck.js → /healthz.latest → ui.update): a quiet link to the release
+ * page, sitting between the disclaimer and the running version. */
+.title-update {
+  color: #ffd08a;
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(255, 208, 138, .45);
+  padding-bottom: .02rem;
+}
+.title-update:hover { color: #ffe4b0; }
+.title-update:focus-visible { outline: 1px solid rgba(255, 208, 138, .6); outline-offset: .03rem; }

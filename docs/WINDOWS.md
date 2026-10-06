@@ -121,3 +121,22 @@ Linux 上是这一档）→ Windows 自带的 `Expand-Archive`。
 * 游戏不写注册表、不装服务；`启动游戏.bat` 内容只有几行（切到 UTF-8 代码页 → 找 `node\node.exe` →
   跑 `app\scripts\launch.mjs --no-setup`）。
 * 想做成随开机启动的 Windows 服务，用仓库自带的 `scripts/install-service-windows.ps1`（面向整合包/源码部署，见 [DEPLOY.md](DEPLOY.md)）。
+
+## 7. 发布一个新版本
+
+整合包和自动更新的代码包**都要**重新生成，缺一个都会让一部分玩家升不了级：
+
+1. 版本号改三处（`package.json`、`package-lock.json`、`shared/constants.js` 的 `APP_VERSION`），
+   `CHANGELOG.md` 顶部加对应小节 —— `node --test test/version.test.js` 会盯住一致性。
+2. `node scripts/make-windows-bundle.mjs --force` 重打整合包。0.1.4 起包里多一份
+   `app\manifest.json`（每个文件的 sha256 清单）：自动更新靠它认识这棵树、生成删除列表，
+   没有清单的旧包启动器会拒绝自动更新（宁可靠手动重装，也不靠猜去动玩家的目录）。
+3. `node scripts/make-update-package.mjs` 打自动更新用的纯代码包，产物在仓库旁的
+   `Stronghold-Protocol-Update\`：`stronghold-protocol-code-vX.Y.Z.zip`（+ `.sha256`）与 `latest.json`。
+4. 打 tag `vX.Y.Z`、建 GitHub Release，三样东西各就各位：
+   * **整合包 zip** 附到 Release（老玩家最后一次手动升级的入口，之后就是自动更新了）；
+   * **代码包 zip 和 `latest.json`** 附到 Release（Releases API 检查源从资产里取 `latest.json`）；
+   * 这份 `latest.json` **提交到仓库根**随 tag 推上去（jsDelivr 检查源从分支读它；分支缓存约
+     12 小时，对这个发版节奏没有影响）。
+5. 自测一遍：起一次 `启动游戏.bat`，控制台不应出现更新相关的报错；`/healthz` 正常返回。
+

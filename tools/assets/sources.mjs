@@ -4,25 +4,15 @@
 // GitHub URLs support a prefix proxy and a jsDelivr fallback. jsDelivr does
 // not serve the voice branch, but the prefix proxy can still be tried there.
 // See docs/ASSETS.md for the full source list and credits.
+//
+// The proxy-prefix rules live in shared/update.js so the self-update channel (server/updateCheck.js,
+// which may not import from tools/) and the asset pipeline cannot drift apart; they are re-exported
+// here under the names the asset pipeline has always used.
 
-export const DEFAULT_GITHUB_PROXY = 'https://gh-proxy.com/';
+// `export {} from` creates no local binding, so the names downloadUrls() uses are imported too.
+import { DEFAULT_GITHUB_PROXY, proxiedUrl as githubProxyUrl } from '../../shared/update.js';
 
-export function normalizeProxyPrefix(prefix = DEFAULT_GITHUB_PROXY) {
-  if (prefix.trim() === '') return '';
-  const url = new URL(prefix);
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
-    throw new Error('GitHub proxy prefix must be an HTTPS URL without credentials, query or fragment');
-  }
-  return url.href.endsWith('/') ? url.href : url.href + '/';
-}
-
-function isGithubDownloadUrl(url) {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' && !parsed.username && !parsed.password &&
-      ['github.com', 'raw.githubusercontent.com', 'objects.githubusercontent.com'].includes(parsed.host);
-  } catch { return false; }
-}
+export { DEFAULT_GITHUB_PROXY, normalizeProxyPrefix, proxiedUrl as githubProxyUrl } from '../../shared/update.js';
 
 /**
  * Legacy ledgers store the successful proxy URL. Spine page jobs derived from
@@ -41,11 +31,12 @@ export function githubSourceUrl(url) {
   return url;
 }
 
-/** Only public GitHub download URLs are sent to the proxy; never prefix twice. */
-export function githubProxyUrl(url, prefix = DEFAULT_GITHUB_PROXY) {
-  const normalized = normalizeProxyPrefix(prefix);
-  if (!normalized || !isGithubDownloadUrl(url)) return null;
-  return normalized + url;
+function isGithubDownloadUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password &&
+      ['github.com', 'raw.githubusercontent.com', 'objects.githubusercontent.com'].includes(parsed.host);
+  } catch { return false; }
 }
 
 /** Ordered transport alternatives; direct mode retains the existing jsDelivr order. */

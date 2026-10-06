@@ -360,6 +360,9 @@ async function boot() {
     startBuildGuard({
       inMatch: () => selectRoute(store.get()) === 'game',
       onStale: ({ waiting }) => { if (waiting) store.patch('ui', { buildStale: true }); },
+      // the guard's /healthz poll also carries a newer release (server/updateCheck.js → healthz.latest);
+      // the title screen footer shows it as a link — the server itself decides when one is newer
+      onInfo: (h) => store.patch('ui', { update: h && h.latest ? h.latest : null }),
     });
   } catch (err) {
     console.warn('[app] build guard failed to start', err);

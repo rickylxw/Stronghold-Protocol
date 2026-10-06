@@ -184,6 +184,10 @@ const STATUS_TEXT = {
 export function TitleScreen() {
   const conn = useStore((s) => s.connection, shallowEqual);
   const pendingJoin = useStore((s) => s.ui.pendingJoin);
+  // a newer release (server/updateCheck.js → /healthz.latest, ferried by ui/buildGuard.js onInfo):
+  // shown as a footer link — this page is where every player lands, and guests deserve to know the
+  // host's server is behind, too
+  const update = useStore((s) => s.ui.update);
   const [name, setName] = useState(() => store.get().me.name || identity.loadName() || '');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const assetsSettled = useData('assets');
@@ -272,6 +276,8 @@ export function TitleScreen() {
 
     <footer class="title-foot">
       <span>非官方同人复刻 · 游戏素材版权归 上海鹰角网络 / Yostar 所有</span>
+      ${update ? html`<a class="title-update" href=${update.notes || '#'} target="_blank" rel="noopener noreferrer"
+        title="更新由开服的一方进行；联机时请让房主重启启动器">新版本 v${update.version} 已发布 ↗</a>` : null}
       <${MicroLabel}>v${APP_VERSION} · WEB SIMULATION<//>
     </footer>
   </div>`;

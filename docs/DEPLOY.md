@@ -128,6 +128,16 @@ powershell -ExecutionPolicy Bypass -File scripts\install-service-windows.ps1 -Re
 
 没装开机自启的话，最后一步改成重新双击 `start-windows.bat`。用 Releases 完整包的：停止服务器，把新版本的完整包解压到新目录后从那里启动即可（素材已包含；装了开机自启的，在新目录重新运行一次 `install-service-windows.ps1`）。用 GitHub「Download ZIP」源码包的：解压新版本后，把旧目录里的 `public\assets`、`public\fonts`、`.cache` 和 `data\local-assets.json`（若有）复制过去，可避免重新下载。
 
+### 1.6 整合包的自动更新
+
+用 Releases 整合包安装的，`启动游戏.bat`（`scripts/launch.mjs`）启动时会检查新版本：发现新版本会在控制台询问，确认后下载「纯代码包」（几十 MB，不含素材）→ 校验 sha256 → 应用，随后直接以新版本启动；新版本若起不来，自动回滚到更新前的文件再启动一次。更新只发生在「没有任何服务器在跑」的启动窗口里，正在进行的对局不受影响；浏览器页面刷新后即为新版本。
+
+- **检查源**依次为 `SP_UPDATE_CHECK_URL`（自建镜像可指向一份同样的 `latest.json`）→ jsDelivr 上的 `latest.json` → GitHub Releases API；全部失败就静默跳过本次检查，不拦启动。客户端标题页的「新版本已发布」提示来自服务器 `/healthz` 的同一份检查结果。
+- **下载**默认直连 GitHub；不稳定时可设 `SP_ASSET_SOURCE=mirror`（或仅对更新设 `SP_UPDATE_SOURCE=mirror`）走与素材下载相同的前缀镜像规则（`SP_GITHUB_PROXY`，默认 `https://gh-proxy.com/`）。下载边下边校验 sha256，暂存在 `app\.update-staging\`，换入前把被覆盖的文件备份到 `app\.update-backup\`（启动确认健康后自动清理）。
+- **开关**：`SP_NO_UPDATE_CHECK=1` 完全关闭检查；`--no-update` 跳过本次；`--update` 或 `SP_AUTO_UPDATE=1` 免询问直接更新（脚本 / 无人值守用；非交互终端不询问、不下载）。
+- 素材清单有变化的版本会在更新后提示联网补下载（`node tools/setup.mjs`，按内容哈希只补缺失和变更的文件）；便携版 Node 不在自动更新范围内（版本钉死在仓库里，极少变化）。
+- 源码安装不做自动更新（那是 `git pull` 的地盘，启动时只提示新版本号）；Docker 按镜像拉取更新。
+
 ## 2. 让不在同一网络的朋友加入
 
 ### 2.1 Tailscale / ZeroTier（推荐给家用小主机）

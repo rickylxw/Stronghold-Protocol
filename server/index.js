@@ -42,6 +42,7 @@ import { WebSocketServer } from 'ws';
 import { Network, SessionRegistry, NET_DEFAULTS } from './net.js';
 import { Lobby } from './lobby.js';
 import { getData, loadData } from './data.js';
+import { createUpdateWatcher, repoSlug, updateCheckDisabled } from './updateCheck.js';
 import { PROTOCOL_VERSION, APP_VERSION } from '../shared/constants.js';
 import { MEDIA_PREFIX, AUDIO_EXTS } from '../shared/media.js';
 
@@ -636,6 +637,10 @@ export async function startServer(opts = {}) {
   const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log });
+  // Self-update watcher (server/updateCheck.js), created by main() and injected here so tests that
+  // boot servers directly never touch the network: /healthz.latest carries a newer release's
+  // version + notes when the checker found one, null otherwise.
+  const updates = opts.updates || null;
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
@@ -666,6 +671,9 @@ export async function startServer(opts = {}) {
         // the runtime the server is serving right now (public/js/ui/buildGuard.js): a page whose own build is
         // older than this reloads itself, so a deploy reaches clients that never reload
         build: buildTag(),
+        // a newer release (server/updateCheck.js): { version, notes } when the update checker found one —
+        // the title screen shows a hint; null when the check is off, failed, or nothing newer is out
+        latest: updates ? updates.latest() : null,
         sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
       });
       return;
@@ -756,9 +764,18 @@ function isMain() {
 async function main() {
   process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection', e));
   process.on('uncaughtException', (e) => console.error('[process] uncaught exception', e));
+  // Update check (server/updateCheck.js): background, never blocks the boot, SP_NO_UPDATE_CHECK=1 opts out.
+  let updates;
+  if (!updateCheckDisabled()) {
+    const slug = await repoSlug(ROOT);
+    if (slug) {
+      updates = createUpdateWatcher({ slug, log: console });
+      updates.start();
+    }
+  }
   let srv;
   try {
-    srv = await startServer();
+    srv = await startServer({ updates });
   } catch (e) {
     if (e && e.code === 'EADDRINUSE') console.error(`端口已被占用 / port in use: ${e.port ?? process.env.PORT ?? 3000}. Try PORT=3001 npm start`);
     else console.error('[boot] failed to start', e);

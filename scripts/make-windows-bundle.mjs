@@ -29,6 +29,8 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { APP_VERSION } from '../shared/constants.js';
+import { buildManifest } from '../tools/update/manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const IS_WIN = process.platform === 'win32';
@@ -53,8 +55,8 @@ const NODE_PIN = Object.freeze({
 /** 这几份不进版本库（npm / tools/setup.mjs 生成），但必须进包，否则游戏缺素材或缺前端库。 */
 const ASSET_DIRS = ['public/assets', 'public/fonts', 'public/vendor'];
 
-/** 版本库里有、但便携包不要的（测试代码，省体积）。 */
-const SKIP_TRACKED = ['test/'];
+/** 版本库里有、但便携包不要的（测试代码，省体积）。更新包（make-update-package.mjs）遵循同一份规则。 */
+export const SKIP_TRACKED = ['test/'];
 
 /** 包根要带的许可证 / 声明。 */
 const LEGAL_FILES = ['LICENSE', 'NOTICE.md', 'THIRD-PARTY-NOTICES.md'];
@@ -176,7 +178,7 @@ export function forceDeleteVerdict(dir) {
  * 这是 app\ 文件清单的唯一来源。用 NUL 分隔读，避免中文 / 空格文件名被 git 转义或截断。
  * @returns {string[]}
  */
-function trackedFiles() {
+export function trackedFiles() {
   const r = spawnSync('git', ['-C', ROOT, 'ls-files', '-z'], { maxBuffer: 256 * 1024 * 1024 });
   if (r.error || r.status !== 0) {
     throw new Error('git ls-files 失败：打包只收版本库里跟踪的文件，请在完整的 git 仓库里运行');
@@ -260,7 +262,7 @@ async function dirSize(dir) {
  * 在临时目录里 `npm ci --omit=dev` 再搬过来：既拿到干净的生产依赖（不带 puppeteer-core 这类
  * devDependency），又不会动本仓库自己的 node_modules。
  */
-async function installProductionDeps(appDir) {
+export async function installProductionDeps(appDir) {
   const stage = path.join(appDir, '.deps-stage');
   await fsp.rm(stage, { recursive: true, force: true });
   await fsp.mkdir(stage, { recursive: true });
@@ -535,6 +537,12 @@ async function main() {
   await installProductionDeps(appDir);
   const deps = await dirSize(path.join(appDir, 'node_modules'));
   console.log(`    完成：${deps.files} 个文件 / ${MB(deps.bytes)}（只含生产依赖）`);
+
+  // 3b) 文件清单：自动更新（scripts/launch.mjs）靠它知道这棵树当前装了什么；应用更新时以它为
+  // 删除列表的来源，没有清单的旧包一律拒绝自更新（宁可让人手动重下，也不靠猜去动别人的目录）。
+  const manifest = await buildManifest(appDir, { version: APP_VERSION });
+  await fsp.writeFile(path.join(appDir, 'manifest.json'), JSON.stringify(manifest));
+  console.log(`    manifest.json：${Object.keys(manifest.files).length} 个文件带 sha256`);
 
   // 4) 便携版 Node（每次都从校验过的 zip 重新解压）
   let nodeInfo = { version: '（未打包，目标机器需自备 Node 22+）', bytes: 0 };
