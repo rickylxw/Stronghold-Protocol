@@ -712,8 +712,31 @@ function TerrainDetail({ terrain }) {
 }
 
 /**
+ * A stage device's tip (follow-up to GitHub issue #184: 阻隔工事 / “双眼皮” / 射击台 / 气流). Opened by a tap on the
+ * device itself — the game screen resolves it with `gameLogic.deviceInfo` from the stage the board on screen is built
+ * from; in a battle the screen adds the device unit's live HP (`hp`, from the field's own snapshots).
+ * @param {{ name:string, tag:string, lines:string[], facts?:string[], stats?:{k:string,v:any}[], hp?:number, maxHp?:number, row:number, col:number }} device
+ */
+function DeviceDetail({ device }) {
+  return html`
+    <div class="dhead">
+      <div class="dhead__icon"><${Icon} name="info" /></div>
+      <div class="dhead__info">
+        <div class="dhead__chips"><span class="dtag-kind">${device.tag}</span></div>
+        <h3 class="dhead__name">${device.name}</h3>
+      </div>
+    </div>
+    <${Section} title=${t('装置机制')} micro="DEVICE">
+      ${device.lines.map((line, i) => html`<p class="dtext" key=${i}>${line}</p>`)}
+    <//>
+    ${typeof device.hp === 'number' ? html`<${Section} title=${t('现状')}><p class="dtext">${t('生命 {hp} / {max}', { hp: Math.max(0, Math.round(device.hp)), max: device.maxHp ?? device.hp })}</p><//>` : null}
+    ${Array.isArray(device.stats) && device.stats.length ? html`<${Section} title=${t('数值')}><p class="dtext">${device.stats.map((s) => `${s.k} ${s.v}`).join(' · ')}</p><//>` : null}
+    ${Array.isArray(device.facts) && device.facts.length ? html`<${Section} title=${t('这一格')}><p class="dtext">${device.facts.join(' · ')}</p><//>` : null}`;
+}
+
+/**
  * Resolve what a detail target shows.
- * @param {{ kind:'piece'|'chess'|'item'|'enemy'|'unit'|'token'|'terrain', id?:string, uid?:number, unit?:any, count?:number }} target
+ * @param {{ kind:'piece'|'chess'|'item'|'enemy'|'unit'|'token'|'terrain'|'device', id?:string, uid?:number, unit?:any, count?:number }} target
  * @param {Map<number, any>} pieces indexPieces(priv)
  * @param {{ priv?: any, backups?: any }} [opts] 0.2.0 补位: the player's own pieces and cards of a chess in
  *   m.private.standIns — a unit carrying `standInFor`, and a teammate's bond popup row that says it (`target.standInFor`)
@@ -726,6 +749,8 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
   if (!target) return null;
   // a special terrain tile (issue #184): the screen resolved the stage's own numbers already (gameLogic.terrainInfo)
   if (target.kind === 'terrain') return target.terrain && typeof target.terrain === 'object' ? { type: 'terrain', terrain: target.terrain } : null;
+  // a stage device (follow-up to #184): the screen resolved the device's stage entry (gameLogic.deviceInfo), live HP on top
+  if (target.kind === 'device') return target.device && typeof target.device === 'object' ? { type: 'device', device: target.device } : null;
   const ownSi = (c) => ownStandIn(c, priv, backups);
   const dd = { chess: data.get('chess'), backups };
   /** the own card of chess `c`: its 自选 record and pick when the player filled that DIY slot */
@@ -839,6 +864,7 @@ export function DetailPanel({ detail, editable, snapHp, onClose, onSell, onDestr
       ${detail.type === 'enemy' ? html`<${EnemyDetail} enemy=${detail.enemy} snapHp=${snapHp} count=${detail.count} live=${liveNow} />` : null}
       ${detail.type === 'token' ? html`<${TokenDetail} token=${detail.token} piece=${detail.piece} ownerId=${detail.ownerId ?? null} snapHp=${snapHp} live=${liveNow} />` : null}
       ${detail.type === 'terrain' ? html`<${TerrainDetail} terrain=${detail.terrain} />` : null}
+      ${detail.type === 'device' ? html`<${DeviceDetail} device=${detail.device} />` : null}
     </div>
   </aside>`;
 }

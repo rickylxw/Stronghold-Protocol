@@ -96,7 +96,7 @@ import {
   phaseMode, phaseBanner, isCombatPhase, showDeadPill, isBossPhase, placementContext, canPlace, boardTargets, dropIntent,
   battleOverSfx, uniteResultBox, battleResultBox,
   snapHud, activeBubbles, shortcutFor, shortcutBlocked, closesOnFieldPress, phaseTotalSeconds, homeFieldId, ownFieldId, normalizeSp, sortedPlayers,
-  terrainInfo,
+  terrainInfo, deviceInfo,
   countdownState, shopBlockReason, stageOverrides, effectiveStage, watchTarget, dropFailureReason,
   previewEnemyKey, prepCamera, prepCameraFor, foldCamera, deployFieldOf, fieldTile, panelSide, panelSlots, bondPopupPlace, unitLoadout, deployedRecord,
   mergeTarget, modeOffBonds, readyFundsPrompt, ownerBandId, ownDiyRecord, ownStandIn,
@@ -372,6 +372,10 @@ function MatchScreen() {
   live.current.terrainTile = showPrep && (deployField === 'bossL' || deployField === 'bossR')
     ? (row, col) => fieldTile(deployField, row, col)
     : (row, col) => [row, col];
+  // the battle field's device units (kind 'device': crates / turrets) and their latest snapshot tuples — the device
+  // tip's live HP (deviceLiveInfo below); prep has no battle, so the stage's own numbers only
+  live.current.deviceUnits = showPrep || !field ? null : (Array.isArray(field.units) ? field.units : null);
+  live.current.snapUnits = () => snapUnitsRef.current;
   const staleFieldRef = useRef(null);
   const enteredFieldRef = useRef(null);
   const pressSel = useRef(null);                         // the selected piece when the current field press began
@@ -857,6 +861,19 @@ function MatchScreen() {
       setFacing({ uid: piece.uid, piece, row: t.row, col: t.col, grid: previewGrid(lookups, piece), name: rec?.name || '' });
       audio.sfx('pick', { volume: 0.5 });
     };
+    // gameLogic.deviceInfo plus the battle device unit standing at (row, col): its live HP goes on the card. A device
+    // is not a unit to the picker (render/app.js battleUnitAt skips kind 'device', ui/fallbackField.js taps tiles), so
+    // the tap lands in tileClick; a destroyed one (no HP left) is gone — the tap belongs to the tile under the wreck.
+    const deviceLiveInfo = (L, row, col) => {
+      const info = deviceInfo(L.terrainStage, row, col);
+      if (!info) return null;
+      const u = (Array.isArray(L.deviceUnits) ? L.deviceUnits : [])
+        .find((x) => x && x.kind === 'device' && Math.round(x?.x) === col && Math.round(x?.y) === row);
+      const s = u ? L.snapUnits?.().get(u.id) : null;
+      if (!u || !s) return info;                      // prep, or the unit's snapshot has not arrived: stage numbers only
+      if (!(s[3] > 0)) return null;
+      return { ...info, hp: s[3], maxHp: s[4] };
+    };
     const offs = [
       view.on('pieceDragStart', (e) => {
         const L = live.current;
@@ -928,13 +945,22 @@ function MatchScreen() {
         setSel(wasSel ? null : { uid: e.uid });
         if (wasSel) setDetail((d) => (d?.kind === 'piece' && d.uid === e.uid ? null : d));
       }),
-      // a tap on the ground itself: a special terrain tile explains itself (GitHub issue #184 「建议加入对于特殊地形的单击
-      // 信息提示」) — 活性源石 / 沼泽 / 排气格栅 / 深水区 / 红蓝门 / 传送, with the numbers of the stage behind the board.
-      // An ordinary tile (road / floor / wall) says nothing, so the press keeps its other meanings (deselect, close).
+      // a tap on the ground itself: a stage device on the tile (阻隔工事 / “双眼皮” / 射击台 / 气流) explains itself
+      // first (follow-up to GitHub issue #184), then a special terrain tile (GitHub issue #184 「建议加入对于特殊地形的
+      // 单击信息提示」) — 活性源石 / 沼泽 / 排气格栅 / 深水区 / 红蓝门 / 传送, with the numbers of the stage behind the
+      // board. An ordinary tile (road / floor / wall) says nothing, so the press keeps its other meanings (deselect,
+      // close).
       view.on('tileClick', (t) => {
         if (!t || !Number.isInteger(t.row) || !Number.isInteger(t.col)) return;
         const L = live.current;
         const [row, col] = L.terrainTile(t.row, t.col);
+        const device = deviceLiveInfo(L, row, col);
+        if (device) {
+          audio.sfx('click', { volume: 0.4 });
+          setSel(null);
+          setDetail({ kind: 'device', device });
+          return;
+        }
         const info = terrainInfo(L.terrainStage, row, col);
         if (!info) return;
         audio.sfx('click', { volume: 0.4 });

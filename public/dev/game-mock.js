@@ -23,6 +23,9 @@ import { PHASE, GEO } from '/shared/constants.js';
 const params = new URLSearchParams(location.search);
 const SHOT = params.get('shot') === '1';
 const VARIANTS = new Set((params.get('variant') || '').split(',').filter(Boolean));
+// the match's stage (data/stages.json id): ?stage=act1autochess_m01 boards a stage whose own devices (crates / turrets)
+// stand on the prep field — the default act2autochess_m01 keeps its blowers and turrets off it (rows 6 / 8 / 13)
+const STAGE_ID = params.get('stage') || 'act2autochess_m01';
 
 // ---- deterministic rng ----------------------------------------------------------------------------------
 let seed = 20260927;
@@ -119,7 +122,7 @@ function pushPublic() {
 function buildState() {
   uidSeq = 100;
   seed = 20260927;
-  const stage = data.lookup('stages', 'act2autochess_m01');
+  const stage = data.lookup('stages', STAGE_ID) || data.lookup('stages', 'act2autochess_m01');
   const melee = stage.deployTiles.normal.melee.slice();
   const ranged = stage.deployTiles.normal.rangedOnly.slice();
   const bonds = data.list('bonds');
@@ -206,7 +209,7 @@ function buildState() {
 
   const pub = {
     phase: PHASE.PREP, round: 6, lastRound: 14, bossRound: 14, hiddenRound: 15, deadline: Date.now() + 74000, serverNow: Date.now(), modeId: 'mode_multi_hard', difficulty: 'HARD',
-    stageId: 'act2autochess_m01', factions: ['FLY', 'TIMES', 'SPECIAL'], disabledBonds: [...disabled], bannedChess: banned, bossId: 'boss_5',
+    stageId: STAGE_ID, factions: ['FLY', 'TIMES', 'SPECIAL'], disabledBonds: [...disabled], bannedChess: banned, bossId: 'boss_5',
     hiddenBossId: 'boss_8', teamLp: null, bossHp: null, draft: null, sp: null, players, fields: [],
   };
   if (VARIANTS.has('boss') || VARIANTS.has('bossR')) pub.round = pub.bossRound;

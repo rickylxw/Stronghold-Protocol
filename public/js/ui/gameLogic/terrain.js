@@ -123,3 +123,117 @@ export function terrainInfo(stage, row, col) {
   else if (tile.groundPassable === true) facts.push(t('地面单位可通过'));
   return { key, name: t(tip.name), tag: t(tip.tag), row, col, lines: tip.lines(stage.special).filter((s) => typeof s === 'string' && s), facts };
 }
+
+// ---- stage device tips (follow-up to GitHub issue #184: the stage DEVICES, not only the tiles) -----------------
+
+/** The device roles a tap explains; the rest is invisible (盟约寒风, the 沼泽/涨潮 controllers) or already covered by a terrain tip. */
+const DEVICE_TIP_ROLES = Object.freeze(['crate', 'turret', 'platform', 'blower']);
+
+const BLOWER_DIR_NAME = Object.freeze({ UP: N_('上'), DOWN: N_('下'), LEFT: N_('左'), RIGHT: N_('右') });
+
+/**
+ * What tapping a stage device says — the same contract as TERRAIN_TIPS, but `lines` read the device's own stage entry
+ * (data/stages.json `stage.devices[]`: stats / skill blackboard / dir), the very numbers the sim runs
+ * (`sim/content/devices.js`, `Battle.js _spawnStageDevices`), so a tip can never disagree with the battle. The prose is
+ * ours (docs/PLAYING.md wording, PRTS 阻隔工事 / “双眼皮” / 射击台 / 源石流发生装置).
+ */
+const DEVICE_TIPS = Object.freeze({
+  crate: {
+    name: N_('阻隔工事'), tag: N_('场地装置'),
+    lines: (st, d) => [
+      t('挡在地上的工事：地面敌人会绕开它走，只有无路可走时才会撞上来把它摧毁，然后继续前进'),
+      t('生命 {hp} 点，被摧毁后从场上消失', { hp: param(d.stats?.maxHp, 100) }),
+    ],
+    facts: () => [N_('这一格不能部署')],
+  },
+  turret: {
+    name: N_('“双眼皮”'), tag: N_('场地装置'),
+    lines: (st, d) => {
+      const bb = isObj(d.skill?.bb) ? d.skill.bb : {};
+      const aspd = param(bb.attack_speed_per_stack, 1);
+      const frag = param(bb.damage_scale_per_stack, 0.001);
+      const aspdMax = param(bb.max_attack_speed, 300);
+      const fragMax = param(bb.max_damage_scale, 1.3);
+      const dur = /持续(\d+(?:\.\d+)?)秒/.exec(String(d.skill?.desc ?? ''));
+      return [
+        t('自动攻击射程内的一名敌人，造成法术伤害，命中的敌人附加易伤'),
+        t('我方当前层数最高的盟约每 1 层：它的攻击速度 +{aspd}（至多 +{aspdMax}），易伤加深 {frag}%（至多 +{fragMax}%）{dur}', {
+          aspd, aspdMax, frag: Math.round(frag * 1000) / 10, fragMax: Math.round((fragMax - 1) * 1000) / 10,
+          dur: dur ? t('，持续 {sec} 秒', { sec: dur[1] }) : '',
+        }),
+      ];
+    },
+    stats: (st, d) => {
+      const s = isObj(d.stats) ? d.stats : {};
+      const out = [{ k: N_('生命'), v: param(s.maxHp, 100) }];
+      if (param(s.atk, 0)) out.push({ k: N_('攻击'), v: param(s.atk, 0) });
+      if (param(s.def, 0)) out.push({ k: N_('防御'), v: param(s.def, 0) });
+      if (param(s.bat, 1) !== 1) out.push({ k: N_('攻击间隔'), v: t('{sec} 秒', { sec: param(s.bat, 1) }) });
+      return out;
+    },
+    facts: () => [N_('这一格不能部署')],
+  },
+  platform: {
+    name: N_('射击台'), tag: N_('场地装置'),
+    lines: () => [
+      t('高台位装置：地面敌人不能走上这一格'),
+      t('远程位干员可以部署在其上；站上去的干员在高位，不阻挡敌人'),
+    ],
+    facts: () => [N_('远程位可部署')],
+  },
+  blower: {
+    name: N_('源石流发生装置'), tag: N_('场地装置'),
+    lines: (st, d) => {
+      const bb = isObj(d.skill?.bb) ? d.skill.bb : (isObj(st?.blower?.bb) ? st.blower.bb : {});
+      const out = [t('向前方吹出气流（这一台朝{dir}）', { dir: t(BLOWER_DIR_NAME[String(d.dir || 'UP').toUpperCase()] || BLOWER_DIR_NAME.UP) })];
+      const eq = param(bb['blower_s_character[equal].atk'], 0);
+      const op = param(bb['blower_s_character[opposite].atk'], 0);
+      const mods = [];
+      if (eq) mods.push(t('面向与风向相同的干员攻击力 {atk}', { atk: pctText(eq) }));
+      if (op) mods.push(t('相反的 {atk}', { atk: pctText(op) }));
+      if (mods.length) out.push(t('部署在气流里的干员：{mods}', { mods: mods.join(t('；')) }));
+      const eqM = param(bb['blower_s_enemy[equal].move_speed'], 0);
+      const opM = param(bb['blower_s_enemy[opposite].move_speed'], 0);
+      const em = [];
+      if (eqM) em.push(t('顺着风移动速度 {mul}', { mul: moveMulText(1 + eqM) }));
+      if (opM) em.push(t('逆着风 {mul}', { mul: moveMulText(1 + opM) }));
+      if (em.length) out.push(t('在气流里移动的敌人：{mods}', { mods: em.join(t('，')) }));
+      return out;
+    },
+    facts: () => [N_('这一格不能部署')],
+  },
+});
+
+const moveMulText = (v) => `×${Math.round(v * 100) / 100}`;
+
+/**
+ * The tip a tap on a tile occupied by a stage device opens (follow-up to GitHub issue #184), or null: an ordinary tile
+ * — or a device this client does not draw (`active` false, a 机变 card removed the crate / the turret is off) — falls
+ * through to `terrainInfo`. Visibility mirrors what the renderers draw (`render/board3d/layout.js stageDevices`,
+ * `render/tiles.js _stageDevices`): `active` when set, else not `hidden`. The screen passes the player's own
+ * `effectiveStage`, so a card-removed crate is already out of the list.
+ * @param {{ devices?: any[], special?: any } | null | undefined} stage the shown field's stage (already effectiveStage)
+ * @param {number} row board row (row 0 = the bottom row, DESIGN §1)
+ * @param {number} col
+ * @returns {{ key:string, name:string, tag:string, row:number, col:number, lines:string[], facts:string[], stats?:{k:string,v:string|number}[] } | null}
+ */
+export function deviceInfo(stage, row, col) {
+  const list = Array.isArray(stage?.devices) ? stage.devices : null;
+  if (!list || !Number.isInteger(row) || !Number.isInteger(col)) return null;
+  let found = null;
+  for (const d of list) {
+    if (!isObj(d) || !Array.isArray(d.pos) || d.pos[0] !== row || d.pos[1] !== col) continue;
+    const tip = DEVICE_TIPS[d.role];
+    if (!tip || !DEVICE_TIP_ROLES.includes(d.role)) continue;
+    if (!(typeof d.active === 'boolean' ? d.active : !d.hidden)) continue;
+    found = { tip, d };
+    break;
+  }
+  if (!found) return null;
+  const { tip, d } = found;
+  const lines = (typeof tip.lines === 'function' ? tip.lines(stage.special, d) : []).filter((s) => typeof s === 'string' && s);
+  const facts = (typeof tip.facts === 'function' ? tip.facts(stage.special, d) : []).filter(Boolean).map((f) => t(f));
+  const stats = (typeof tip.stats === 'function' ? tip.stats(stage.special, d) : null)
+    ?.map((s) => ({ k: t(s.k), v: s.v }));
+  return { key: d.role, name: t(tip.name), tag: t(tip.tag), row, col, lines, facts, ...(stats && stats.length ? { stats } : {}) };
+}
